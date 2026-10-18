@@ -1,10 +1,11 @@
 package eu.kanade.tachiyomi.extension.all.rule34
 
-import android.app.Application
 import android.content.SharedPreferences
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.Source
+import eu.kanade.tachiyomi.source.SourceFactory
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -14,118 +15,105 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONArray
-import uy.kohesive.injekt.Injekt
-import uy.kohesive.injekt.api.get
 import java.text.SimpleDateFormat
 import java.util.Locale
+
+class Rule34Factory : SourceFactory {
+    override fun createSources(): List<Source> = listOf(Rule34())
+}
 
 class Rule34 : HttpSource(), ConfigurableSource {
 
     override val name = "Rule34"
     override val baseUrl = "https://rule34.xxx"
-    private val apiUrl = "https://api.rule34.xxx"
     override val lang = "all"
     override val supportsLatest = true
 
-    private val preferences: SharedPreferences by lazy {
-        Injekt.get<Application>().getSharedPreferences("source_$id", 0x0000)
-    }
+    private val apiUrl = "https://api.rule34.xxx"
 
-    private val apiKey: String
-        get() = preferences.getString("api_key", "") ?: ""
+    private var prefs: SharedPreferences? = null
 
-    private val userId: String
-        get() = preferences.getString("user_id", "") ?: ""
+    private val userId: String get() = prefs?.getString("user_id", "") ?: ""
+    private val apiKey: String get() = prefs?.getString("api_key", "") ?: ""
 
-    private fun checkCredentials() {
-        if (apiKey.isBlank() || userId.isBlank()) {
-            throw Exception("Please enter your Rule34 User ID and API Key in the extension settings.")
+    private val authParams: String
+        get() {
+            val sb = StringBuilder()
+            if (userId.isNotBlank()) sb.append("&user_id=$userId")
+            if (apiKey.isNotBlank()) sb.append("&api_key=$apiKey")
+            if (sb.isEmpty()) throw Exception("Open Rule34 extension settings and enter your User ID / API Key.")
+            return sb.toString()
         }
-    }
 
-    override fun headersBuilder() = super.headersBuilder().add("Referer", baseUrl)
+    override fun headersBuilder(): Headers.Builder = super.headersBuilder().add("Referer", baseUrl)
 
-    // Popular Manga
+    private fun apiGet(url: String): Request = Request.Builder().url(url).headers(headers).build()
+
     override fun popularMangaRequest(page: Int): Request {
-        checkCredentials()
-        val offset = (page - 1) * 40
-        return GET("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=sort:score&pid=$offset&limit=40&api_key=$apiKey&user_id=$userId", headers)
+        val pid = (page - 1) * 40
+        return apiGet("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=sort:score&pid=$pid&limit=40$authParams")
     }
 
     override fun popularMangaParse(response: Response): MangasPage = parsePosts(response)
 
-    // Latest Manga
     override fun latestUpdatesRequest(page: Int): Request {
-        checkCredentials()
-        val offset = (page - 1) * 40
-        return GET("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=&pid=$offset&limit=40&api_key=$apiKey&user_id=$userId", headers)
+        val pid = (page - 1) * 40
+        return apiGet("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=&pid=$pid&limit=40$authParams")
     }
 
     override fun latestUpdatesParse(response: Response): MangasPage = parsePosts(response)
 
-    // Search
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
-        checkCredentials()
-        val offset = (page - 1) * 40
+        val pid = (page - 1) * 40
         val tags = query.trim().replace(" ", "+")
-        return GET("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=$tags&pid=$offset&limit=40&api_key=$apiKey&user_id=$userId", headers)
+        return apiGet("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&tags=$tags&pid=$pid&limit=40$authParams")
     }
 
     override fun searchMangaParse(response: Response): MangasPage = parsePosts(response)
 
     private fun parsePosts(response: Response): MangasPage {
-        val jsonArray = JSONArray(response.body.string())
+        val jsonArray = JSONArray(response.body!!.string())
         val mangas = mutableListOf<SManga>()
-        
         for (i in 0 until jsonArray.length()) {
             val json = jsonArray.getJSONObject(i)
-            val manga = SManga.create().apply {
+            mangas.add(SManga.create().apply {
                 url = json.getInt("id").toString()
                 title = "Post ${json.getInt("id")}"
                 thumbnail_url = json.optString("preview_url", json.optString("sample_url"))
                 description = "Tags: ${json.optString("tags", "")}"
-            }
-            mangas.add(manga)
+            })
         }
-        
         return MangasPage(mangas, jsonArray.length() == 40)
     }
 
-    // Manga Details
-    override fun mangaDetailsRequest(manga: SManga): Request {
-        checkCredentials()
-        return GET("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&id=${manga.url}&api_key=$apiKey&user_id=$userId", headers)
-    }
+    override fun mangaDetailsRequest(manga: SManga): Request =
+        apiGet("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&id=${manga.url}$authParams")
 
     override fun mangaDetailsParse(response: Response): SManga {
-        val jsonArray = JSONArray(response.body.string())
+        val jsonArray = JSONArray(response.body!!.string())
         if (jsonArray.length() == 0) throw Exception("Post not found")
         val json = jsonArray.getJSONObject(0)
-        
         return SManga.create().apply {
             title = "Post ${json.getInt("id")}"
             thumbnail_url = json.optString("preview_url", json.optString("sample_url"))
             description = "Tags: ${json.optString("tags", "")}\nScore: ${json.optInt("score", 0)}"
             genre = json.optString("tags", "").replace(" ", ", ")
             status = SManga.COMPLETED
+            initialized = true
         }
     }
 
-    // Chapters (Each post is treated as a single-chapter manga)
     override fun chapterListRequest(manga: SManga): Request = mangaDetailsRequest(manga)
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val jsonArray = JSONArray(response.body.string())
+        val jsonArray = JSONArray(response.body!!.string())
         if (jsonArray.length() == 0) return emptyList()
         val json = jsonArray.getJSONObject(0)
-        
-        return listOf(
-            SChapter.create().apply {
-                url = json.getInt("id").toString()
-                name = "Post ${json.getInt("id")}"
-                date_upload = parseDate(json.optString("created_at", ""))
-            }
-        )
+        return listOf(SChapter.create().apply {
+            url = json.getInt("id").toString()
+            name = "Post ${json.getInt("id")}"
+            date_upload = parseDate(json.optString("created_at", ""))
+        })
     }
 
     private fun parseDate(dateStr: String): Long {
@@ -136,40 +124,35 @@ class Rule34 : HttpSource(), ConfigurableSource {
         }
     }
 
-    // Pages
-    override fun pageListRequest(chapter: SChapter): Request {
-        checkCredentials()
-        return GET("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&id=${chapter.url}&api_key=$apiKey&user_id=$userId", headers)
-    }
+    override fun pageListRequest(chapter: SChapter): Request =
+        apiGet("$apiUrl/index.php?page=dapi&s=post&q=index&json=1&id=${chapter.url}$authParams")
 
     override fun pageListParse(response: Response): List<Page> {
-        val jsonArray = JSONArray(response.body.string())
+        val jsonArray = JSONArray(response.body!!.string())
         if (jsonArray.length() == 0) return emptyList()
         val json = jsonArray.getJSONObject(0)
-        
-        val fileUrl = json.getString("file_url")
-        return listOf(Page(0, "", fileUrl))
+        return listOf(Page(0, "", json.getString("file_url")))
     }
 
     override fun imageUrlParse(response: Response): String = throw UnsupportedOperationException("Not used.")
 
-    // Preferences for API Credentials
-    override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        val userIdPref = EditTextPreference(screen.context).apply {
+    override fun setupPreferenceScreen(screen: PreferenceScreen): PreferenceScreen {
+        val p = screen.context.getSharedPreferences("rule34_prefs", 0)
+        prefs = p
+        screen.addPreference(EditTextPreference(screen.context).apply {
             key = "user_id"
             title = "User ID"
-            summary = "Your Rule34 User ID. Required for API access."
+            summary = "Your Rule34 User ID (required)"
             setDefaultValue("")
-        }
-        
-        val apiKeyPref = EditTextPreference(screen.context).apply {
+            setOnPreferenceChangeListener { _, v -> p.edit().putString("user_id", v as String).commit(); true }
+        })
+        screen.addPreference(EditTextPreference(screen.context).apply {
             key = "api_key"
             title = "API Key"
-            summary = "Your Rule34 API Key. Required for API access."
+            summary = "Your Rule34 API Key (optional)"
             setDefaultValue("")
-        }
-        
-        screen.addPreference(userIdPref)
-        screen.addPreference(apiKeyPref)
+            setOnPreferenceChangeListener { _, v -> p.edit().putString("api_key", v as String).commit(); true }
+        })
+        return screen
     }
 }
