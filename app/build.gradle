@@ -1,0 +1,13 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+ext {
+    extName = "Rule34"
+    extClass = ".Rule34"
+    extVersionCode = 1
+    isNsfw = true
+}
+
+apply(from: "https://raw.githubusercontent.com/keiyoushi/extensions/main/template.gradle")
