@@ -7,6 +7,19 @@ android {
     namespace 'eu.kanade.tachiyomi.extension.all.rule34'
     compileSdk 34
 
+    signingConfigs {
+        release {
+            storeFile file("../release.keystore")
+            storePassword "r34pass"
+            keyAlias "r34"
+            keyPassword "r34pass"
+        }
+    }
+    buildTypes {
+        debug { signingConfig signingConfigs.release }
+        release { signingConfig signingConfigs.release }
+    }
+
     defaultConfig {
         applicationId 'eu.kanade.tachiyomi.extension.all.rule34'
         minSdk 21
