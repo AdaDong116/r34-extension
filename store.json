@@ -1,0 +1,7 @@
+{
+  "name": "Kanha Store",
+  "baseUrl": "https://raw.githubusercontent.com/AdaDong116/r34-extension/main",
+  "iconUrl": "https://github.com/AdaDong116.png",
+  "repoUrl": "https://raw.githubusercontent.com/AdaDong116/r34-extension/main/index.min.json",
+  "signingKeyFingerprint": "sha256:0a5bfdf302d960eeccfe3faf3ccd7f65655ddcb3f1c8f41be826aec20bb84041"
+}
