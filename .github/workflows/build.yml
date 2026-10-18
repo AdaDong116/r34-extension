@@ -27,3 +27,6 @@ jobs:
         with:
           name: rule34-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Print SHA256 fingerprint
+        run: keytool -list -v -keystore release.keystore -storepass r34pass | grep -i SHA256
