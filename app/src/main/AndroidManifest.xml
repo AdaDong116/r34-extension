@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="eu.kanade.tachiyomi.extension.all.rule34">
+    <application android:icon="@mipmap/ic_launcher" android:label="Rule34" />
+</manifest>
